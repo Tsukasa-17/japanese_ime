@@ -55,23 +55,83 @@ Astertrail の本の検索欄に、チャット欄を閉じたまま日本語（
 
 ## アドオンから使う
 
-アドオンがするのは、「入力欄を使い始めた／使い終わった」と知らせることと、届いた文字を欄に入れることだけです。
-すぐ使える見本が `samples/japanese_ime_client.lua` にあります。
+アドオンがするのは、「入力欄を使い始めた／使い終わった」とプラグインに知らせることと、届いた文字を欄に入れることだけです。
+チャット欄を閉じたままにすることと、IME が「A」（英数）に切り替わらないようにすることは、プラグインがします。
+
+そのための部品（見本）が `samples/japanese_ime_client.lua` です。下の決まりを全部まとめてあるので、そのまま使えます。
+
+### 置き方
+
+`samples/japanese_ime_client.lua` を、**アドオンのフォルダ**（`アドオン名.lua` と同じ場所）に `japanese_ime_client.lua` という名前で置き、`require` で読みます。
+
+```
+Vanacore\addons\vanacore\youraddon\
+  youraddon.lua
+  japanese_ime_client.lua   ← ここに置く
+```
+
+### 書き足すところ
 
 ```lua
 local jime = require('japanese_ime_client')
-jime.setup('youraddon')                       -- 読み込み時に 1 回（ID は英小文字の短い名前）
+jime.setup('youraddon')                  -- 読み込み時に 1 回。ID は英小文字の短い名前
 
--- 描くとき
-imgui.InputText('##search', buf, 256)
-jime.field(imgui)                             -- 入力欄のすぐ後ろ
+-- 入力欄を描くとき（buf は { 文字 } の表）
+imgui.InputText(jime.label('##search'), buf, 256)
+if jime.field(imgui, buf, 256, '##search') then
+    -- 日本語が入って buf[1] が変わった（検索し直すなど）
+end
 
--- 毎フレームの最後
+-- 毎フレームの最後に 1 回
 jime.frame_end()
 
 -- アンロード時
 jime.shutdown()
 ```
+
+- `jime.field(imgui)` だけでも動きます（`buf` などを渡さないときは、下の「文字の入れ方」の 2 つ目が使えません）。
+- 欄が選ばれている間だけ `on`、外れたら `off` を送ります（選ばれた／外れた瞬間に 1 回ずつ）。ゲームのチャット欄が開いている間は、プラグインが自分で取得を止めるので、アドオンは何もしなくてかまいません。
+- お知らせを出したくないときは `jime.setup('youraddon', { notify = false })`。
+
+### プラグインの見つけ方と送り方
+
+- **読み込まれているか**：VanaCore の `vana.plugins.loaded()` を先に見ます。返ってくる名前は、小文字にして `_` と空白を除いてから `japaneseime` と比べます（`japanese_ime`・`Japanese_IME`・`japanese ime` などはどれも同じとみなします）。`vana.plugins` が無い環境では、Ashita の `AshitaCore:GetPluginManager():IsLoaded('japanese_ime')` を使います。
+- **送る**：`vana.plugins.raise(名前, 中身)` を先に使い、無ければ `AshitaCore:GetPluginManager():RaiseEvent(名前, 中身, 長さ)` を使います。
+- **受け取る**：`ashita.events.register('plugin_event', …)` で受けます。中身は `e.data`（文字）か、`e.data_raw` と `e.size`（`ffi.string` で読む）です。
+
+### 返事と、返事が来ないときのコマンド
+
+`on <ID>` を送ると、プラグインは `japanese_ime_state` で `on <いま文字を受け取っている ID>` を返します。自分の ID が返ってくれば届いています。
+
+**1 秒たっても `on <自分の ID>` が返ってこなければ**、チャットに何も出ないコマンド `/jime addon on <ID>` でも頼みます（やめるときは `/jime addon off <ID>`）。たとえば次のようなときです。
+
+- `vana.plugins.raise` も `RaiseEvent` も無い、または呼んでもプラグインまで届かない環境（Ashita 互換の層によっては、アドオンからの plugin_event がプラグインに渡らないことがあります）。
+- プラグインを入れ直した直後などで、知らせを取りこぼしたとき。
+
+コマンドは `vana.chat.run` を先に、無ければ `AshitaCore:GetChatManager():QueueCommand(-1, …)` で打ちます。
+
+ほかのアドオンが後から `on` にしたときも `on <そのアドオンの ID>` が返ります。これは自分あてではないので、返事が来たことにはしません。
+
+### 文字の入れ方
+
+1. ImGui の `io:AddInputCharactersUTF8` があれば、それで入れます（カーソルの位置に入ります）。
+2. 無ければ、`buf[1]` の後ろに足します。ImGui は描いている間の文字を自分で持っているので、そのままだと次のフレームで元の文字に戻されます。そこで、足した次の 1 フレームだけ `jime.label('##search')` が別の ID（`##search_jime`）を返し、ImGui に文字を読み直させます。
+
+変換中の文字（`japanese_ime_comp`）は、見本では欄のすぐ下に出します。要らなければ消してかまいません。
+
+### 状態のお知らせ（1 回だけ）
+
+欄を選んだとき、うまく動いていなければチャットに 1 回だけ出します。
+
+- 「japanese_ime プラグインが読み込まれていません」… プラグインが見つからない（`/plugin load japanese_ime` を打つ）。英数字はそのまま打てます。
+- 「japanese_ime は読み込まれていますが、知らせに返事がありません。コマンドで頼みました」… 見つかったが、知らせが届いていない。コマンドで代わりに頼んでいます。
+
+### 動いているかの確かめ方
+
+- **`/jime status`**：アドオンの入力欄を選んでいる間に `/jime status` を打つと、1 行目の `owner=` に自分のアドオンの ID が出ます（例：`owner=youraddon`）。出ていれば届いています。`owner=-` なら、どのアドオンからも頼まれていません。
+  チャット欄を開くために欄から離れると `off` になって `owner=-` に戻るので、`/bind f12 /jime status` のようにキーに割り当て、欄を選んだまま押すのが確実です。
+- **`/jime diag`**：先に `/jime diag` を打っておくと、欄を選んだ／離れたときに `owner: - -> youraddon` のような行がチャットに出ます（もう一度 `/jime diag` で止まります）。
+- 見本は、うまく動いていないときに上の「状態のお知らせ」を 1 回だけ出します。
 
 ### 知らせ（plugin_event）
 
@@ -82,7 +142,14 @@ jime.shutdown()
 | プラグイン → アドオン | `japanese_ime_comp` | `<ID>\t<変換中の文字>`（空なら変換が終わった） |
 | プラグイン → アドオン | `japanese_ime_state` | `on <いま受け取っている ID>` ／ `off` |
 
-自分の ID が付いた文字だけを使ってください。
+- 文字を受け取るのは、最後に `on` にしたアドオン 1 つだけです（持ち主）。持ち主が `off` にすると、ほかにまだ `on` のアドオンがあれば、その中で最後に `on` にしたものへ移ります。
+- 自分の ID が付いた文字だけを使ってください。
+
+### 見本のテスト
+
+```sh
+luajit tests/test_client.lua    # lua5.1 でも動きます
+```
 
 ## しくみ（くわしく）
 
@@ -111,7 +178,7 @@ sudo apt install g++-mingw-w64-i686
 
 **What it is.** japanese_ime is a small Ashita v4 plugin (tested on VanaCore). It lets a supporting addon receive Japanese IME text in its own ImGui text box while the game's chat line stays closed. Normally, typing Japanese with the IME on makes the game open its chat line, so Japanese can't be typed into an addon's box.
 
-**It does nothing on its own.** It only acts while a supporting addon tells it "my text box is active" (plugin event `japanese_ime_ctl`). When no addon has asked, the game behaves exactly as without the plugin. The game's own chat input (including Japanese) is never blocked: while the chat line is open, the plugin stops capturing. Supported addons are listed above (currently Astertrail).
+**It does nothing on its own.** It only acts while a supporting addon tells it "my text box is active" (plugin event `japanese_ime_ctl`, or the silent command `/jime addon on|off <id>` as a fallback when plugin events do not reach the plugin; both do the same thing). When no addon has asked, the game behaves exactly as without the plugin. The game's own chat input (including Japanese) is never blocked: while the chat line is open, the plugin stops capturing. Supported addons are listed above (currently Astertrail).
 
 **What it changes in the client, and only while a supporting addon's text box is active:**
 
