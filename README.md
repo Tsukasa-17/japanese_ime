@@ -6,7 +6,7 @@
 
 - 作者: Tsukasa
 - ライセンス: GPL-3.0（`LICENSE`）
-- 版: 1.0
+- バージョン: 1.0
 - ダウンロード: [Releases](https://github.com/Tsukasa-17/japanese_ime/releases)
 
 > **このプラグインだけでは何もしません。** 対応しているアドオンの入力欄で日本語を打てるようにするための部品です。
@@ -106,3 +106,21 @@ sudo apt install g++-mingw-w64-i686
 
 - ゲームのコードの一部をつなぎ替えます。並びが見つからないときは何もしません（`/jime status` の `msg_filter=no`、記録の `game message filter NOT FOUND`）。
 - Windows の IME（Microsoft IME、Google 日本語入力）で確かめています。
+
+## For CatsEyeXI staff (review notes, English)
+
+**What it is.** japanese_ime is a small Ashita v4 plugin (tested on VanaCore). It lets a supporting addon receive Japanese IME text in its own ImGui text box while the game's chat line stays closed. Normally, typing Japanese with the IME on makes the game open its chat line, so Japanese can't be typed into an addon's box.
+
+**It does nothing on its own.** It only acts while a supporting addon tells it "my text box is active" (plugin event `japanese_ime_ctl`). When no addon has asked, the game behaves exactly as without the plugin. The game's own chat input (including Japanese) is never blocked: while the chat line is open, the plugin stops capturing. Supported addons are listed above (currently Astertrail).
+
+**What it changes in the client, and only while a supporting addon's text box is active:**
+
+- **IME calls.** It replaces some import-table entries of FFXiMain.dll: IMM32 functions such as ImmSetOpenStatus, ImmSetConversionStatus, ImmNotifyIME, ImmGetOpenStatus and ImmGetCompositionStringA, plus GetAsyncKeyState, GetKeyboardState, DefWindowProcA and PeekMessageA. While a box is active, the game's calls that would close or reset the IME are skipped, and the game is told the IME is closed. At all other times every call is passed through unchanged.
+- **Window messages.** It subclasses the game window to read the IME's composition and result text, then passes them to the addon as plugin events.
+- **Key hiding.** Using the Ashita SDK keyboard callbacks, it hides these keys from the game's DirectInput reads: Space, Enter, numpad Enter, Esc, Backspace, Tab, arrows, Delete, Home and End. A key stays hidden until it is released, and for 0.5 s after the box is left. This is so that typing in the box does not trigger game key binds, such as Space opening the chat line. All other keys are untouched.
+- **One code patch.** It finds one call instruction in FFXiMain.dll by a byte pattern (`F3 A5 E8 ?? ?? ?? ?? 83 C4 1C 8D 4C 24 14 51 FF 15`) and points it at the plugin. That call goes to the game's pre-dispatch message handler, which opens the chat line on IME messages. While a box is active, IME messages (VK_PROCESSKEY, WM_IME_*, and DBCS WM_CHAR) skip that handler. All other messages, and all messages when no box is active, go to the original handler. If the pattern is not found exactly once, nothing is patched.
+- **Restore on unload.** Everything above is restored on `/plugin unload japanese_ime`: import entries, the patched call, the window subclass and the keyboard callbacks.
+
+**What it does not do.** It sends and receives no network traffic and no game packets. It does not read or write character, inventory or other game data. Apart from the import-table entries and the single call instruction described above, it writes no game memory. It does not automate any game action.
+
+**Source.** The full source is in this repository under GPL-3.0. Author: Tsukasa. The released `japanese_ime.dll` is built from this source with mingw-w64 using `build.sh`.
