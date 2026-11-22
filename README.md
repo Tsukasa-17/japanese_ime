@@ -16,9 +16,9 @@
 
 Astertrail の本の検索欄に、チャット欄を閉じたまま日本語（「クリスタル」）を打っているところです。
 
-https://github.com/user-attachments/assets/48913ea0-f008-4f4a-bc25-fe2115489def
+[![日本語入力のようす](docs/demo.gif)](docs/demo.mp4)
 
-動画が再生されないときは、[動画ファイル（15 秒）](docs/demo.mp4)を開いてください。
+[日本語入力のようす（動画・15 秒）](docs/demo.mp4)
 
 ## 対応しているアドオン
 
