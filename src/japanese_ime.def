@@ -1,0 +1,4 @@
+LIBRARY japanese_ime
+EXPORTS
+    expCreatePlugin = expCreatePlugin@4
+    expGetInterfaceVersion = expGetInterfaceVersion@0
