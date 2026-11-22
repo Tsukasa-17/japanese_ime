@@ -18,6 +18,7 @@ local ashita_loaded = false
 local item_active = false
 local has_add = true
 local io_added = {}
+local drawn = {}
 
 _G.print = function (s) printed[#printed + 1] = tostring(s) end
 _G.ashita = { events = {
@@ -53,7 +54,16 @@ local imgui = {
     end,
     GetItemRectMin = function () return 0, 0 end,
     GetItemRectMax = function () return 100, 20 end,
-    GetForegroundDrawList = function () return { AddText = function () end } end,
+    GetFontSize = function () return 10 end,
+    GetStyle = function () return { FramePadding = { x = 4, y = 5 } } end,
+    CalcTextSize = function (s) return #s * 2, 10 end,      -- 1 バイト 2 ドット
+    GetForegroundDrawList = function () return {
+        PushClipRect = function (_, a, b) drawn[#drawn + 1] = 'clip' end,
+        PopClipRect = function () drawn[#drawn + 1] = 'pop' end,
+        AddRectFilled = function () end,
+        AddText = function (_, pos, col, s) drawn[#drawn + 1] = string.format('text %g,%g %s', pos[1], pos[2], s) end,
+        AddLine = function (_, a, b) drawn[#drawn + 1] = string.format('line %g-%g y%g', a[1], b[1], a[2]) end,
+    } end,
 }
 package.loaded['imgui'] = imgui
 
@@ -93,8 +103,20 @@ pev('japanese_ime_text', 'yunaui\tよそ'); frame()
 eq(#io_added, 0, 'text for another addon ignored')
 pev('japanese_ime_text', 'testaddon\tクリスタル'); frame()
 eq(io_added[1], 'クリスタル', 'inserted with AddInputCharactersUTF8')
-pev('japanese_ime_comp', 'testaddon\tかな'); frame()
+buf = { 'ab' }
+pev('japanese_ime_comp', 'testaddon\tかな'); drawn = {}; frame()
 eq(jime.state().comp, 'かな', 'composition kept')
+-- 欄の中、打ってある文字（ab = 4 ドット）の後ろ：x = 0 + 余白 4 + 4、y = 0 + 余白 5。下線は y + 10
+eq(drawn[1], 'clip', 'clipped to the field')
+eq(drawn[2], 'text 8,5 かな', 'drawn after the typed text inside the field')
+eq(drawn[3], 'line 8-20 y15', 'underlined')
+eq(drawn[4], 'pop', 'clip popped')
+-- 長くて右端（100 - 4）からはみ出す → 右端にそろえる
+buf = { string.rep('x', 40) }; drawn = {}; frame()
+eq(drawn[2], 'text 84,5 かな', 'right-aligned when it would overflow')
+buf = { '' }
+pev('japanese_ime_comp', 'testaddon\t'); drawn = {}; frame()
+eq(#drawn, 0, 'nothing drawn when composition ends')
 frame(2)
 eq(#ran, 0, 'confirmed: no fallback command')
 -- チャット欄が開いても off は送らない（止めるのはプラグイン。持ち主は残る）

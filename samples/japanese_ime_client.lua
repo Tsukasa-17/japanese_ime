@@ -189,6 +189,55 @@ local function clip_utf8(s, max)
 end
 M._clip_utf8 = clip_utf8
 
+-- 変換中の文字を描く。欄（直前に描いた項目）の中、打ってある文字 text の幅のぶん右に置き、下線を引く。
+-- カーソルの位置は読めないので、カーソルが文の途中にあっても文の後ろに出る。
+-- 右端からはみ出すときは右端にそろえ（欄が横に流れているときの代わり）、欄の外には描かない。
+local function text_width(imgui, s)
+    if s == '' then return 0 end
+    local ok, w, _ = pcall(imgui.CalcTextSize, s)
+    if not ok then return 0 end
+    if type(w) == 'table' then return tonumber(w.x or w[1]) or 0 end
+    return tonumber(w) or 0
+end
+
+function M.draw_comp(imgui, text, comp)
+    local ok1, x1, y1 = pcall(imgui.GetItemRectMin)
+    local ok2, x2, y2 = pcall(imgui.GetItemRectMax)
+    if not ok1 or not ok2 or type(x1) ~= 'number' or type(x2) ~= 'number' then return nil end
+    local fs = 16
+    local okf, f = pcall(imgui.GetFontSize)
+    if okf and tonumber(f) then fs = tonumber(f) end
+    -- 欄の内側の余白（FramePadding）。読めなければ欄の高さから求める
+    local pad_x, pad_y
+    pcall(function ()
+        local fp = imgui.GetStyle().FramePadding
+        pad_x = tonumber(fp.x or fp[1]); pad_y = tonumber(fp.y or fp[2])
+    end)
+    pad_y = pad_y or math.max(0, ((y2 - y1) - fs) / 2)
+    pad_x = pad_x or (pad_y > 0 and math.min(pad_y, 8) or 4)
+    local cw = text_width(imgui, comp)
+    local x = x1 + pad_x + text_width(imgui, text or '')
+    if x + cw > x2 - pad_x then x = math.max(x1 + pad_x, x2 - pad_x - cw) end
+    local y = y1 + pad_y
+    local dl
+    for _, name in ipairs({ 'GetForegroundDrawList', 'GetWindowDrawList' }) do
+        if type(imgui[name]) == 'function' then
+            local ok, v = pcall(imgui[name])
+            if ok and (type(v) == 'table' or type(v) == 'userdata') then dl = v; break end
+        end
+    end
+    if not dl then return nil end
+    local bg, fg = 0xEB1E1E1E, 0xFFFFFFFF   -- 0xAABBGGRR：文字の後ろを塗りつぶす色と、文字・下線の色
+    pcall(function ()
+        local clip = pcall(function () dl:PushClipRect({ x1, y1 }, { x2, y2 }, true) end)
+        dl:AddRectFilled({ x - 2, y1 + 2 }, { x + cw + 2, y2 - 2 }, bg, 2)
+        dl:AddText({ x, y }, fg, comp)
+        dl:AddLine({ x, y + fs }, { x + cw, y + fs }, fg, 1)
+        if clip then dl:PopClipRect() end
+    end)
+    return x, y
+end
+
 -- 入力欄を描いたすぐ後に呼ぶ。buf（{ 文字 }）・size・label は、文字の入れ方 2 を使うときだけ要る。
 -- buf[1] を変えたら true
 function M.field(imgui, buf, size, label)
@@ -206,14 +255,8 @@ function M.field(imgui, buf, size, label)
             if label then st.reid_next = label end
         end
     end
-    -- 変換中の文字を欄のすぐ下に出す（任意。要らなければ消してかまいません）
-    if st.comp ~= '' then
-        pcall(function ()
-            local x = imgui.GetItemRectMin()
-            local _, y = imgui.GetItemRectMax()
-            imgui.GetForegroundDrawList():AddText({ x + 4, y + 2 }, 0xFFFFFFFF, st.comp)
-        end)
-    end
+    -- 変換中の文字を、欄の中の打ってある文字のすぐ後ろに下線付きで出す（任意。要らなければ消してかまいません）
+    if st.comp ~= '' then M.draw_comp(imgui, type(buf) == 'table' and buf[1] or '', st.comp) end
     return changed
 end
 
