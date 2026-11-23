@@ -91,7 +91,7 @@ frame(); frame(); frame(3)
 eq(#raised, 0, 'no plugin: nothing raised')
 eq(#ran, 0, 'no plugin: no command')
 eq(#printed, 1, 'one notice when the plugin is missing')
-eq(printed[1]:find('読み込まれていません', 1, true) ~= nil, true, 'missing notice text')
+eq(printed[1]:find('プラグインが要ります', 1, true) ~= nil, true, 'missing notice text')
 item_active = false; frame()
 
 -- 2) vana.plugins で見つかる（名前は大文字・_ 違いでも）→ on、返事あり、文字が入る
@@ -187,7 +187,7 @@ item_active = true
 frame(); frame(); frame(3)
 eq(#printed, 1, 'one notice when converting')
 eq(printed[1]:sub(1, 5), 'SJIS:', 'notice converted with to_shift_jis')
-eq(printed[1]:find('読み込まれていません', 1, true) ~= nil, true, 'converted notice still has the text')
+eq(printed[1]:find('プラグインが要ります', 1, true) ~= nil, true, 'converted notice still has the text')
 jime.shutdown()
 
 io.stdout:write(string.format('test_client ok (%d checks)\n', n))

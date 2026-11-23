@@ -293,7 +293,7 @@ function M.frame_end()
             st.loaded = M.plugin_loaded()
         end
         if st.loaded ~= true then
-            tell('missing', 'japanese_ime プラグインが読み込まれていません。日本語を入れるには /plugin load japanese_ime（英数字はそのまま打てます）')
+            tell('missing', '日本語を入力するには japanese_ime プラグインが要ります（英数字はそのまま打てます）。')
         end
     else
         st.loaded, st.checked_at = nil, nil
