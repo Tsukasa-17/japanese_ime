@@ -77,6 +77,8 @@ end
 
 -- 名前の比べ方
 _G.jime = require('japanese_ime_client')
+eq(jime.VERSION, '1.1', 'sample version')
+eq(jime.composing(), false, 'not composing at start')
 eq(jime._norm('Japanese_IME'), 'japaneseime', 'normalize')
 eq(jime._norm('japanese ime'), 'japaneseime', 'normalize spaces')
 eq(jime._clip_utf8('あいう', 7), 'あい', 'clip utf8')
@@ -106,6 +108,7 @@ eq(io_added[1], 'クリスタル', 'inserted with AddInputCharactersUTF8')
 buf = { 'ab' }
 pev('japanese_ime_comp', 'testaddon\tかな'); drawn = {}; frame()
 eq(jime.state().comp, 'かな', 'composition kept')
+eq(jime.composing(), true, 'composing while text is being converted')
 -- 欄の中、打ってある文字（ab = 4 ドット）の後ろ：x = 0 + 余白 4 + 4、y = 0 + 余白 5。下線は y + 10
 eq(drawn[1], 'clip', 'clipped to the field')
 eq(drawn[2], 'text 8,5 かな', 'drawn after the typed text inside the field')
@@ -117,6 +120,7 @@ eq(drawn[2], 'text 84,5 かな', 'right-aligned when it would overflow')
 buf = { '' }
 pev('japanese_ime_comp', 'testaddon\t'); drawn = {}; frame()
 eq(#drawn, 0, 'nothing drawn when composition ends')
+eq(jime.composing(), false, 'not composing when composition ends')
 frame(2)
 eq(#ran, 0, 'confirmed: no fallback command')
 -- チャット欄が開いても off は送らない（止めるのはプラグイン。持ち主は残る）
@@ -170,5 +174,20 @@ jime.shutdown()
 eq(raised[#raised], 'A:japanese_ime_ctl=off testaddon', 'off on shutdown')
 eq(ran[#ran], 'A:/jime addon off testaddon', 'command off on shutdown')
 eq(handlers.plugin_event, nil, 'unregistered')
+
+-- 7) VanaCore の to_shift_jis があれば、お知らせは変換してから出す
+_G.vana = vana_tbl()
+vana.encoding = { to_shift_jis = function (s) return 'SJIS:' .. s end }
+plugins = {}
+printed = {}
+raised, ran = {}, {}
+item_active = false
+jime.setup('testaddon')
+item_active = true
+frame(); frame(); frame(3)
+eq(#printed, 1, 'one notice when converting')
+eq(printed[1]:sub(1, 5), 'SJIS:', 'notice converted with to_shift_jis')
+eq(printed[1]:find('読み込まれていません', 1, true) ~= nil, true, 'converted notice still has the text')
+jime.shutdown()
 
 io.stdout:write(string.format('test_client ok (%d checks)\n', n))

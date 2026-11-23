@@ -58,14 +58,24 @@ Astertrail の本の検索欄に、チャット欄を閉じたまま日本語（
 アドオンがするのは、「入力欄を使い始めた／使い終わった」とプラグインに知らせることと、届いた文字を欄に入れることだけです。
 チャット欄を閉じたままにすることと、IME が「A」（英数）に切り替わらないようにすることは、プラグインがします。
 
-そのための部品（見本）が `samples/japanese_ime_client.lua` です。下の決まりを全部まとめてあるので、そのまま使えます。
+そのための部品（見本）が `samples/japanese_ime_client.lua` です。下の決まりを全部まとめてあるので、そのまま使えます。見本のバージョンは 1.1 です（プラグイン本体のバージョン 1.0 とは別です）。
 
 ### 置き方
 
 `samples/japanese_ime_client.lua` を、**アドオンのフォルダ**（`アドオン名.lua` と同じ場所）に `japanese_ime_client.lua` という名前で置き、`require` で読みます。
 
+VanaCore のアドオン:
+
 ```
 Vanacore\addons\vanacore\youraddon\
+  youraddon.lua
+  japanese_ime_client.lua   ← ここに置く
+```
+
+Ashita のアドオン（VanaCore では `addons\ashita\<アドオン名>\`）:
+
+```
+Vanacore\addons\ashita\youraddon\
   youraddon.lua
   japanese_ime_client.lua   ← ここに置く
 ```
@@ -92,10 +102,11 @@ jime.shutdown()
 - `jime.field(imgui)` だけでも動きます（`buf` などを渡さないときは、下の「文字の入れ方」の 2 つ目が使えません）。
 - 欄が選ばれている間だけ `on`、外れたら `off` を送ります（選ばれた／外れた瞬間に 1 回ずつ）。ゲームのチャット欄が開いている間は、プラグインが自分で取得を止めるので、アドオンは何もしなくてかまいません。
 - お知らせを出したくないときは `jime.setup('youraddon', { notify = false })`。
+- 変換中かどうかは `jime.composing()` で調べられます（true / false）。確かめ用に `jime.state()` もあります。
 
 ### プラグインの見つけ方と送り方
 
-- **読み込まれているか**：VanaCore の `vana.plugins.loaded()` を先に見ます。返ってくる名前は、小文字にして `_` と空白を除いてから `japaneseime` と比べます（`japanese_ime`・`Japanese_IME`・`japanese ime` などはどれも同じとみなします）。`vana.plugins` が無い環境では、Ashita の `AshitaCore:GetPluginManager():IsLoaded('japanese_ime')` を使います。
+- **読み込まれているか**：VanaCore の `vana.plugins.loaded()` を先に見ます。返ってくる名前は、小文字にして `_` と空白を除いてから `japaneseime` と比べます（`japanese_ime`・`Japanese_IME`・`japanese ime` などはどれも同じとみなします）。`vana.plugins` が無い環境では、Ashita の `AshitaCore:GetPluginManager():IsLoaded('japanese_ime')` を使います。VanaCore では、読み込み済みでも `IsLoaded('japanese_ime')` が false を返すことがあるので、`vana.plugins.loaded()` を先に見てください。
 - **送る**：`vana.plugins.raise(名前, 中身)` を先に使い、無ければ `AshitaCore:GetPluginManager():RaiseEvent(名前, 中身, 長さ)` を使います。
 - **受け取る**：`ashita.events.register('plugin_event', …)` で受けます。中身は `e.data`（文字）か、`e.data_raw` と `e.size`（`ffi.string` で読む）です。
 
@@ -115,16 +126,16 @@ jime.shutdown()
 ### 文字の入れ方
 
 1. ImGui の `io:AddInputCharactersUTF8` があれば、それで入れます（カーソルの位置に入ります）。
-2. 無ければ、`buf[1]` の後ろに足します。ImGui は描いている間の文字を自分で持っているので、そのままだと次のフレームで元の文字に戻されます。そこで、足した次の 1 フレームだけ `jime.label('##search')` が別の ID（`##search_jime`）を返し、ImGui に文字を読み直させます。
+2. 無ければ、`buf[1]` の後ろに足します。ImGui は描いている間の文字を自分で持っているので、そのままだと次のフレームで元の文字に戻されます。そこで、足した次の 1 フレームだけ `jime.label('##search')` が別の ID（`##search_jime`）を返し、ImGui に文字を読み直させます。ImGui は ID が変わると欄の選択が外れることがあるので、確定のたびに欄をクリックし直す必要があるかもしれません。VanaCore（ImGui 1.92.3）では 1 の経路が使われるため、この予備は通りません。
 
-変換中の文字（`japanese_ime_comp`）は、見本では**欄の中**、打ってある文字のすぐ後ろに下線付きで出します（`jime.draw_comp`）。打ってある文字の幅（`CalcTextSize`）と欄の内側の余白（`FramePadding`）から位置を決め、欄の右端からはみ出すときは右端にそろえ、欄の外には描きません。要らなければ消してかまいません。
+変換中の文字（`japanese_ime_comp`）は、見本では**欄の中**、打ってある文字のすぐ後ろに下線付きで出します（`jime.draw_comp`）。打ってある文字の幅（`CalcTextSize`）と欄の内側の余白（`FramePadding`）から位置を決め、欄の右端からはみ出すときは右端にそろえ、欄の外には描きません。要らなければ消してかまいません。変換中の文字は `GetForegroundDrawList` に描くため、他のウィンドウより手前に出ます。
 
 - ImGui からはカーソルの位置が読めないので、**カーソルを文の途中に置いていても、変換中の文字は文の後ろ（右端寄り）に出ます**。確定した文字はカーソルの位置に入ります（`AddInputCharactersUTF8` を使えるとき）。
 - 位置に打ってある文字を使うので、`jime.field(imgui)` だけ（`buf` を渡さない）のときは欄の左端に出ます。
 
 ### 状態のお知らせ（1 回だけ）
 
-欄を選んだとき、うまく動いていなければチャットに 1 回だけ出します。
+欄を選んだとき、うまく動いていなければチャットに 1 回だけ出します。VanaCore では `vana.encoding.to_shift_jis` で Shift-JIS に直してから出すので、日本語クライアントでも文字化けしません。
 
 - 「japanese_ime プラグインが読み込まれていません」… プラグインが見つからない（`/plugin load japanese_ime` を打つ）。英数字はそのまま打てます。
 - 「japanese_ime は読み込まれていますが、知らせに返事がありません。コマンドで頼みました」… 見つかったが、知らせが届いていない。コマンドで代わりに頼んでいます。

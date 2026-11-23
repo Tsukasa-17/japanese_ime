@@ -1,8 +1,11 @@
 --[[
   japanese_ime_client.lua — 日本語入力プラグイン japanese_ime を使うための、アドオン側の部品（見本）
   作者: Tsukasa / ライセンス: GPL-3.0（プラグインと同じ）
+  見本のバージョン: 1.1（プラグイン本体のバージョン 1.0 とは別）
 
   置き方: このファイルをアドオンのフォルダに japanese_ime_client.lua という名前で置き、require で読みます。
+  VanaCore のアドオンなら Vanacore\addons\vanacore\<アドオン名>\、
+  Ashita のアドオンなら Vanacore\addons\ashita\<アドオン名>\。
 
   アドオンがするのは、「入力欄を使い始めた／使い終わった」とプラグインに知らせることと、
   届いた文字を欄に入れることだけです。チャット欄を閉じたままにすることと、
@@ -38,9 +41,15 @@
     1. ImGui の io:AddInputCharactersUTF8 があれば、それで入れる（カーソルの位置に入る）。
     2. 無ければ buf[1] の後ろに足し、ImGui が持っている古い文字に戻されないよう、
        次の 1 フレームだけ jime.label が別の ID（ラベル .. '_jime'）を返す。
+       ImGui は ID が変わると欄の選択が外れることがあるので、確定のたびに
+       欄をクリックし直す必要があるかもしれません。VanaCore（ImGui 1.92.3）では
+       1 の経路が使われるため、この予備は通りません。
+
+  変換中かどうかは jime.composing()（true / false）。確かめ用に jime.state() もある。
 ]]
 
 local M = {
+    VERSION     = '1.1',       -- 見本のバージョン（プラグイン本体とは別）
     PLUGIN      = 'japanese_ime',
     PLUGIN_KEY  = 'japaneseime',   -- 名前を小文字にして _ と空白を除いたもの
     EV_CTL      = 'japanese_ime_ctl',
@@ -116,10 +125,18 @@ function M.command(line)
     return (pcall(function () AshitaCore:GetChatManager():QueueCommand(-1, line) end))
 end
 
+-- ゲームのチャットは Shift-JIS。VanaCore なら vana.encoding.to_shift_jis で直してから出す。
+-- その関数が無い環境（テストや Ashita だけのときなど）は、そのまま出す。
+local function to_chat(s)
+    local ok, out = pcall(function () return vana.encoding.to_shift_jis(s) end)
+    if ok and type(out) == 'string' then return out end
+    return s
+end
+
 local function tell(key, text)
     if not M.notify or st.told[key] then return end
     st.told[key] = true
-    print(string.format('[%s] %s', M.id, text))
+    print(to_chat(string.format('[%s] %s', M.id, text)))
 end
 
 -- プラグインからの知らせ（plugin_event）
@@ -220,6 +237,7 @@ function M.draw_comp(imgui, text, comp)
     if x + cw > x2 - pad_x then x = math.max(x1 + pad_x, x2 - pad_x - cw) end
     local y = y1 + pad_y
     local dl
+    -- 手前のリストを先に使う（他のウィンドウより前に出る。裏に隠れるより見えた方がよい）
     for _, name in ipairs({ 'GetForegroundDrawList', 'GetWindowDrawList' }) do
         if type(imgui[name]) == 'function' then
             local ok, v = pcall(imgui[name])
@@ -307,6 +325,11 @@ function M.shutdown()
     end
     pcall(function () ashita.events.unregister('plugin_event', M.id .. '_japanese_ime') end)
     reset()
+end
+
+-- 変換中かどうか
+function M.composing()
+    return type(st.comp) == 'string' and st.comp ~= ''
 end
 
 -- 確かめ用
